@@ -1,16 +1,15 @@
+# consider creating Intent class
 import json
 import random
 import numpy as np
-import pickle
 
-import nltk
 from nltk.stem import WordNetLemmatizer
 from nltk.tokenize import word_tokenize
 from nltk.stem import PorterStemmer
-from nltk.corpus import stopwords
 
+from tensorflow import keras
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Activation, Dropout
+from tensorflow.keras.layers import Dense, Dropout
 from tensorflow.keras.optimizers import SGD
 
 
@@ -24,20 +23,23 @@ class ChatBot:
         """
         self._lemmatizer = WordNetLemmatizer()  # expand options in future
         self._stemmer = PorterStemmer()
+        self._behavior_dict = {}
+        self._vocabulary = []
+        self._intention = -1  # lame, consider future fix
         self._ignored_letters = ['?', '.', ',']
 
     def parse_json(self, file_name: str) -> None:
-        """Parses .json file, cleans up patterns and retrieves vocabulary
+        """Parses .json file, cleans up patterns and retrieves vocabulary and behavior for every intent
 
         Args:
             file_name: str
         """
         self._data = json.loads(open(file_name).read())
-        self._vocabulary = []
 
         for i, intent in enumerate(self._data['intents']):
             cleaned_up_pattern = []
             for pattern in intent['patterns']:
+                self._behavior_dict[intent['tag']] = {'behavior': self.__give_default_response, 'terminate': False}
                 pattern = word_tokenize(pattern)
                 cleaned_up_sent = [self._stemmer.stem(word.lower()) for word in pattern
                                    if word not in self._ignored_letters]
@@ -47,7 +49,12 @@ class ChatBot:
             self._data['intents'][i]['cleaned_up_patterns'] = cleaned_up_pattern
         self._vocabulary = sorted(set(self._vocabulary))
 
-    def create_bag_of_words(self, pattern: str) -> list:
+    def __give_default_response(self) -> str:
+        """Gives random respond corresponding to intent
+        """
+        return random.choice(self._data['intents'][self._intention]['responses'])
+
+    def __create_bag_of_words(self, pattern: str) -> list:
         """Creates "bag-of-words" model of pattern/sentence based on current vocabulary
 
         Args:
@@ -70,7 +77,7 @@ class ChatBot:
             output_class = [0] * len(self._data['intents'])
             output_class[i] += 1
             for cl_u_pattern in intent['cleaned_up_patterns']:
-                training_data.append([self.create_bag_of_words(cl_u_pattern), output_class])
+                training_data.append([self.__create_bag_of_words(cl_u_pattern), output_class])
 
         random.shuffle(training_data)
 
@@ -89,7 +96,7 @@ class ChatBot:
         """Sets default keras model:
             input -> dense-128-relu -> dense-64-relu -> output-softmax
 
-            optimizer: SGD(lr=0.1, momentum=0.9, nesterov=True)
+            optimizer: SGD(lr=0.01, momentum=0.9, nesterov=True)
             Loss: categorical_crossentropy
             Metrics: accuracy
 
@@ -101,7 +108,7 @@ class ChatBot:
         model.add(Dense(128, input_shape=(len(self._input_data[0]),), activation='relu'))
         model.add(Dense(64, activation='relu'))
         model.add(Dense(len(self._output_data[0]), activation='softmax'))
-        sgd = SGD(lr=0.1, momentum=0.9, nesterov=True)
+        sgd = SGD(lr=0.01, momentum=0.9, nesterov=True)
         model.compile(loss='categorical_crossentropy', optimizer=sgd, metrics=['accuracy'])
 
         self.set_model(model)
@@ -111,109 +118,54 @@ class ChatBot:
         """
         self._model = model
 
-    def train_model(self, epochs, batch_size, verbose) -> None:
+    def train_model(self, epochs, batch_size, verbose, save=False) -> None:
         """Trains Keras model
 
         Args:
             epochs: int
             batch_size: int
             verbose: int
+            save: bool
         """
         self._model.fit(np.array(self._input_data), np.array(self._output_data), epochs=epochs,
                         batch_size=batch_size, verbose=verbose)
 
+        if save:
+            self._model.save('chatbot_model')
+
+    def set_behavior(self, intent: str, behavior=None, terminate=False) -> None:
+        """Sets custom behavior to intention
+
+        Args:
+            intent: intention
+            behavior: custom function()
+            terminate: set True if you want intention to shut down the bot
+        """
+        if behavior:
+            self._behavior_dict[intent]["behavior"] = behavior
+        self._behavior_dict[intent]["terminate"] = terminate
+
     def run(self) -> None:
-        pass
+        """ Runs bot until intention with terminate=True
+            Bot gives proper answer with confidence > 85%
+        """
+        while True:
+            message = input('type something: ')
+            message = self.__create_bag_of_words(message)
+            intent_probs = self._model.predict([message])[0]
+            intent_idx = np.argmax(intent_probs)
+            if intent_probs[intent_idx] > 0.85:
+                self._intention = intent_idx
+                print(self._behavior_dict[self._data['intents'][intent_idx]['tag']]['behavior']())
+                if self._behavior_dict[self._data['intents'][intent_idx]['tag']]['terminate']:
+                    break
+            else:
+                self._intention = -1
+                print("Sorry, i don't understand you")
 
-
-
-
-
-
-
-def run_chatbot():
-    tags_patterns, responses = parse_json('intents.json')
-    dictionary = create_dict(tags_patterns)
-    training_data = get_training_data(tags_patterns, dictionary)
-    input_data = [input[0] for input in training_data]
-    output_data = [output[1] for output in training_data]
-    print(input_data[0])
-    print(output_data)
-
-    model = Sequential()
-    model.add(Dense(128, input_shape=(len(input_data[0]),), activation='relu'))
-    # model.add(Dropout(0.3))
-    model.add(Dense(64, activation='relu'))
-    # model.add(Dropout(0.3))
-    model.add(Dense(len(output_data[0]), activation='softmax'))
-
-    sgd = SGD(lr=0.1, momentum=0.9, nesterov=True)
-    model.compile(loss='categorical_crossentropy', optimizer=sgd, metrics=['accuracy'])
-    model.fit(np.array(input_data), np.array(output_data), epochs=300, batch_size=20, verbose=1)
-    model.save('chatbot_model.model')
-    print('Done')
-
-    while True:
-        message = input('type something: ')
-        message = create_bag_of_words(message, dictionary)
-        result = model.predict(np.array([message]))[0]
-        result_index = np.argmax(result)
-        if result[result_index] > 0.8:
-            response = random.choice(responses[result_index])
-        else:
-            response = "What are u talking about"
-
-        print(response)
-
-
-def get_training_data(tags_patterns, dictionary):
-    input_data = []
-    output_data = []
-    classes = [tag[0] for tag in tags_patterns]
-
-    for pattern in tags_patterns:
-        for sentence in pattern[1]:
-            input_data.append(create_bag_of_words(sentence, dictionary))
-            output = [0] * len(tags_patterns)
-            output[classes.index(pattern[0])] = 1
-            output_data.append(output)
-
-    training_data = list(zip(input_data, output_data))
-    random.shuffle(training_data)
-
-    return training_data
-
-
-def parse_json(json_file):
-    intents = json.loads(open('intents.json').read())  # change later
-
-    tags_patterns = []
-    responses = []
-
-    for intent in intents['intents']:
-        tags_patterns.append([intent['tag'], intent['patterns']])
-        # patterns.append(intent['patterns'])
-        responses.append(intent['responses'])
-
-    return tags_patterns, responses
-
-
-def create_dict(tag_patterns):
-    dictionary = []
-
-    for pattern in tag_patterns:
-        for sentence in pattern[1]:
-            dictionary.extend(word_tokenize(sentence))
-
-    dictionary = [lemmatizer.lemmatize(word.lower()) for word in dictionary if word not in ignored_letters]
-    dictionary = sorted(set(dictionary))
-    return dictionary
-
-
-def create_bag_of_words(sentence, dictionary):
-    bag = []
-    sentence = word_tokenize(sentence)
-    sentence = [lemmatizer.lemmatize(word.lower()) for word in sentence if word not in ignored_letters]
-    for word in dictionary:
-        bag.append(1) if lemmatizer.lemmatize(word.lower()) in sentence else bag.append(0)
-    return bag
+# for weather stuff
+#     base_url = "http://api.openweathermap.org/data/2.5/weather?"
+#     city_name = "London"
+#     r = requests.get(
+#         'http://api.openweathermap.org/data/2.5/weather?q=London&APPID={MY_API_KEY}')
+#     pprint(r.json())

@@ -1,13 +1,16 @@
 from chat_bot import *
 
+def custom_response():
+    return "i'm bot"
 
 def main():
     bot = ChatBot()
     bot.parse_json('intents.json')
     bot.set_training_data()
-    bot.set_default_model()
-    bot.train_model(epochs=300, batch_size=20, verbose=1)
-
+    model = keras.models.load_model("chatbot_model")
+    bot.set_model(model)
+    bot.set_behavior('goodbye', terminate=True)
+    bot.set_behavior('name', behavior=custom_response)
     bot.run()
     return 0
 
