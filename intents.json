@@ -20,13 +20,18 @@
          "context_set": ""
         },
         {"tag": "shop",
-         "patterns": ["Id like to buy something", "whats on the menu", "what do you reccommend?", "could i get something to eat"],
+         "patterns": ["Id like to buy something", "whats on the menu", "what do you recommend?", "could i get something to eat"],
          "responses": ["We sell chocolate chip cookies for $2!", "Cookies are on the menu!"],
          "context_set": ""
         },
         {"tag": "hours",
          "patterns": ["when are you guys open", "what are your hours", "hours of operation"],
          "responses": ["We are open 7am-4pm Monday-Friday!"],
+         "context_set": ""
+        },
+          {"tag": "weather",
+         "patterns": ["what about weather in", "what weather", "how does it feel outside"],
+         "responses": ["Standard weather response"],
          "context_set": ""
         }
    ]

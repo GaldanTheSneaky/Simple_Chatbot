@@ -49,7 +49,7 @@ class ChatBot:
             self._data['intents'][i]['cleaned_up_patterns'] = cleaned_up_pattern
         self._vocabulary = sorted(set(self._vocabulary))
 
-    def __give_default_response(self) -> str:
+    def __give_default_response(self, user_message: str) -> str:
         """Gives random respond corresponding to intent
         """
         return random.choice(self._data['intents'][self._intention]['responses'])
@@ -138,7 +138,7 @@ class ChatBot:
 
         Args:
             intent: intention
-            behavior: custom function()
+            behavior: custom function(user_message)
             terminate: set True if you want intention to shut down the bot
         """
         if behavior:
@@ -151,21 +151,16 @@ class ChatBot:
         """
         while True:
             message = input('type something: ')
-            message = self.__create_bag_of_words(message)
-            intent_probs = self._model.predict([message])[0]
+            rendered_message = self.__create_bag_of_words(message)
+            intent_probs = self._model.predict([rendered_message])[0]
             intent_idx = np.argmax(intent_probs)
             if intent_probs[intent_idx] > 0.85:
                 self._intention = intent_idx
-                print(self._behavior_dict[self._data['intents'][intent_idx]['tag']]['behavior']())
+                print(self._behavior_dict[self._data['intents'][intent_idx]['tag']]['behavior'](message))
                 if self._behavior_dict[self._data['intents'][intent_idx]['tag']]['terminate']:
                     break
             else:
                 self._intention = -1
                 print("Sorry, i don't understand you")
 
-# for weather stuff
-#     base_url = "http://api.openweathermap.org/data/2.5/weather?"
-#     city_name = "London"
-#     r = requests.get(
-#         'http://api.openweathermap.org/data/2.5/weather?q=London&APPID={MY_API_KEY}')
-#     pprint(r.json())
+
